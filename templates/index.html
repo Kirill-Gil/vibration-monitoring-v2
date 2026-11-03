@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Система онлайн-мониторинга агрегатов ДНС</title>
+    <script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
+    <style>
+        :root {
+            --gpn-dark-blue: #0B2545;
+            --gpn-blue: #003366;
+            --gpn-cyan: #0078D2;
+            --gpn-bg: #F0F4F8;
+            --card-bg: #FFFFFF;
+            --text-main: #1E293B;
+            --status-green: #10B981;
+            --status-yellow: #F59E0B;
+            --status-red: #EF4444;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', system-ui, sans-serif; }
+        body { background-color: var(--gpn-bg); color: var(--text-main); }
+
+        header {
+            background: linear-gradient(90deg, var(--gpn-dark-blue) 0%, var(--gpn-blue) 60%, var(--gpn-cyan) 100%);
+            color: white; padding: 12px 24px; display: flex; justify-content: space-between; align-items: center;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        .header-title h1 { font-size: 18px; font-weight: 700; }
+        .header-title p { font-size: 12px; opacity: 0.85; margin-top: 2px; }
+        .header-actions { display: flex; gap: 8px; align-items: center; }
+
+        .btn-top {
+            background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.4); color: white;
+            padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600;
+        }
+        .btn-top:hover { background: rgba(255,255,255,0.3); }
+
+        .grid-container {
+            max-width: 1560px; margin: 16px auto; padding: 0 16px;
+            display: grid; grid-template-columns: 2.2fr 1fr; gap: 16px;
+        }
+        .full-col { grid-column: span 2; }
+
+        .card {
+            background: var(--card-bg); border-radius: 8px; padding: 16px 20px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.05); border: 1px solid #E2E8F0;
+        }
+        .card-header {
+            display: flex; justify-content: space-between; align-items: center;
+            border-bottom: 2px solid var(--gpn-bg); padding-bottom: 8px; margin-bottom: 12px;
+        }
+        .card-title { font-size: 13px; font-weight: 700; color: var(--gpn-blue); text-transform: uppercase; }
+
+        /* Мнемосхема */
+        .mnemo-grid {
+            display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
+            background: #EBF2F7; padding: 14px; border-radius: 8px;
+        }
+        .support-box {
+            background: white; border-radius: 6px; padding: 10px; border-top: 4px solid var(--gpn-cyan);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        .support-box.warning { border-top-color: var(--status-yellow); }
+        .support-box.alarm { border-top-color: var(--status-red); }
+        .sup-name { font-weight: 700; font-size: 12px; color: var(--gpn-blue); margin-bottom: 6px; }
+        .ch-row { display: flex; justify-content: space-between; font-size: 11px; margin: 2px 0; }
+        .temp-row { margin-top: 6px; padding-top: 6px; border-top: 1px dashed #CBD5E1; font-size: 11px; font-weight: 600; }
+
+        /* Панель «Что, если?» */
+        .sim-bar {
+            display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+            background: #F8FAFC; padding: 10px 14px; border-radius: 6px; margin-bottom: 12px;
+        }
+        .sim-bar label { font-size: 12px; font-weight: 600; }
+        .sim-bar input[type="range"] { width: 120px; }
+
+        .btn-mode {
+            padding: 5px 10px; border-radius: 4px; border: 1px solid #CBD5E1;
+            background: white; font-size: 11px; font-weight: 600; cursor: pointer;
+        }
+        .btn-mode.active { background: var(--gpn-cyan); color: white; border-color: var(--gpn-cyan); }
+        .btn-mode.danger.active { background: var(--status-red); color: white; border-color: var(--status-red); }
+
+        /* Таблица инцидентов */
+        .log-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        .log-table th, .log-table td { padding: 8px 10px; border-bottom: 1px solid #E2E8F0; text-align: left; }
+        .log-table th { background: #F8FAFC; color: var(--gpn-blue); font-weight: 600; }
+
+        /* Модальные окна */
+        .modal {
+            display: none; position: fixed; z-index: 100; left: 0; top: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5); justify-content: center; align-items: center;
+        }
+        .modal-content {
+            background: white; border-radius: 8px; width: 600px; max-width: 95%; padding: 20px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+        }
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 15px 0; }
+        .form-group label { display: block; font-size: 11px; font-weight: 600; margin-bottom: 4px; }
+        .form-group input, .form-group select { width: 100%; padding: 6px; border: 1px solid #CBD5E1; border-radius: 4px; font-size: 12px; }
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">
+        <h1>СИСТЕМА ОНЛАЙН-МОНИТОРИНГА АГРЕГАТОВ ДНС 0.4-6 кВ</h1>
+        <p>ГОСТ Р ИСО 20816-1-2021 | Полосовой фильтр 2-5 кГц, спектр огибающей, MCSA и Pt100</p>
+    </div>
+    <div class="header-actions">
+        <button class="btn-top" onclick="openModal('passport-modal')">⚙️ Паспорт</button>
+        <button class="btn-top" onclick="openModal('ai-modal')">🧠 Настройка ИИ</button>
+        <div id="status-pill" style="padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 700; color: white; background: var(--status-green);">
+            НОРМА
+        </div>
+    </div>
+</header>
+
+<div class="grid-container">
+
+    <!-- Верхний блок: мнемосхема и режимы -->
+    <div class="card full-col">
+        <div class="card-header">
+            <span class="card-title" id="motor-display-title">Агрегат: Асинхронный ЭД А4 (6 кВ / 630 кВт)</span>
+            <span style="font-size: 12px; color: #64748B;">Синхронизация АЦП: 12 кГц | Пространственный фильтр помех ГОСТ: ВКЛ</span>
+        </div>
+
+        <div class="sim-bar">
+            <div>
+                <label>Обороты: <b id="val-rpm">1796</b> об/мин</label><br>
+                <input type="range" id="slider-rpm" min="600" max="3000" step="10" value="1796" oninput="applySimParams()">
+            </div>
+            <div>
+                <label>Нагрузка: <b id="val-load">85</b>%</label><br>
+                <input type="range" id="slider-load" min="30" max="120" step="5" value="85" oninput="applySimParams()">
+            </div>
+            <div style="display:flex; gap:6px; margin-left: auto;">
+                <button class="btn-mode active" onclick="setDefect('NORMAL', this)">Штатный</button>
+                <button class="btn-mode danger" onclick="setDefect('BEARING_OUTER', this)">Дефект BPFO</button>
+                <button class="btn-mode" onclick="setDefect('COUPLING_MISALIGN', this)">Перекос муфты</button>
+                <button class="btn-mode" onclick="setDefect('ROTOR_BAR', this)">Стержни ротора</button>
+                <button class="btn-mode danger" onclick="setDefect('THERMAL_LOCK', this)">Нагрев dT/dt</button>
+            </div>
+        </div>
+
+        <div class="mnemo-grid">
+            <div class="support-box" id="box-ED_NDE">
+                <div class="sup-name">ОПОРА 1: ЭД (NDE)</div>
+                <div class="ch-row"><span>H:</span><b id="v-ED_NDE_H">0.0</b> мм/с</div>
+                <div class="ch-row"><span>V:</span><b id="v-ED_NDE_V">0.0</b> мм/с</div>
+                <div class="ch-row"><span>A:</span><b id="v-ED_NDE_A">0.0</b> мм/с</div>
+                <div class="temp-row">Pt100: <b id="t-ED_NDE">0.0</b> °C (<span id="dt-ED_NDE">0.0</span> °C/м)</div>
+            </div>
+            <div class="support-box" id="box-ED_DE">
+                <div class="sup-name">ОПОРА 2: ЭД (DE) [Привод]</div>
+                <div class="ch-row"><span>H:</span><b id="v-ED_DE_H">0.0</b> мм/с</div>
+                <div class="ch-row"><span>V:</span><b id="v-ED_DE_V">0.0</b> мм/с</div>
+                <div class="ch-row"><span>A:</span><b id="v-ED_DE_A">0.0</b> мм/с</div>
+                <div class="temp-row">Pt100: <b id="t-ED_DE">0.0</b> °C (<span id="dt-ED_DE">0.0</span> °C/м)</div>
+            </div>
+            <div class="support-box" id="box-PUMP_DE">
+                <div class="sup-name">ОПОРА 3: НАСОС (DE)</div>
+                <div class="ch-row"><span>H:</span><b id="v-PUMP_DE_H">0.0</b> мм/с</div>
+                <div class="ch-row"><span>V:</span><b id="v-PUMP_DE_V">0.0</b> мм/с</div>
+                <div class="ch-row"><span>A:</span><b id="v-PUMP_DE_A">0.0</b> мм/с</div>
+                <div class="temp-row">Pt100: <b id="t-PUMP_DE">0.0</b> °C (<span id="dt-PUMP_DE">0.0</span> °C/м)</div>
+            </div>
+            <div class="support-box" id="box-PUMP_NDE">
+                <div class="sup-name">ОПОРА 4: НАСОС (NDE)</div>
+                <div class="ch-row"><span>H:</span><b id="v-PUMP_NDE_H">0.0</b> мм/с</div>
+                <div class="ch-row"><span>V:</span><b id="v-PUMP_NDE_V">0.0</b> мм/с</div>
+                <div class="ch-row"><span>A:</span><b id="v-PUMP_NDE_A">0.0</b> мм/с</div>
+                <div class="temp-row">Pt100: <b id="t-PUMP_NDE">0.0</b> °C (<span id="dt-PUMP_NDE">0.0</span> °C/м)</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- График спектра огибающей -->
+    <div class="card">
+        <div class="card-header">
+            <span class="card-title">Спектр огибающей Гильберта (Опора 2 DE)</span>
+            <span style="font-size:12px; font-weight:700;" id="bpfo-calc-label">BPFO: 107.3 Гц</span>
+        </div>
+        <div id="chart-envelope" style="height: 280px;"></div>
+    </div>
+
+    <!-- График MCSA токов статора -->
+    <div class="card">
+        <div class="card-header">
+            <span class="card-title">MCSA: Токовый спектр вокруг 50 Гц</span>
+            <span style="font-size:12px;" id="mcsa-stat-label">ΔL = -55 дБ</span>
+        </div>
+        <div id="chart-mcsa" style="height: 280px;"></div>
+    </div>
+
+    <!-- Блок ИИ-валидатора OpenRouter -->
+    <div class="card">
+        <div class="card-header">
+            <span class="card-title">🧠 Интеллектуальное заключение ИИ</span>
+            <div style="display:flex; gap:6px; align-items:center;">
+                <span id="ai-quota-badge" style="font-size: 11px; background: #E2E8F0; padding: 2px 8px; border-radius: 4px;">Квота: 50/50</span>
+                <button class="btn-mode" onclick="forceAIEval()" title="Принудительный вызов модели вне таймера">⚡ Запросить ИИ сейчас</button>
+            </div>
+        </div>
+        <div style="margin-bottom: 6px; display:flex; justify-content:space-between; font-size:11px; color:#64748B;">
+            <span>Источник: <b id="ai-source-badge">Инициализация...</b></span>
+            <span>Модель: <code id="ai-model-badge">-</code></span>
+        </div>
+        <div id="ai-verdict-box" style="font-size: 12.5px; line-height: 1.6; color: #1E293B; background: #F8FAFC; padding: 12px; border-radius: 6px; min-height: 110px; border: 1px solid #E2E8F0;">
+            Выполняется опрос параметров агрегата...
+        </div>
+        <div style="margin-top: 8px; font-size: 11px; color: #64748B; display:flex; justify-content:space-between;">
+            <span>Антидребезг ГОСТ: Cw=<b id="val-cw">0</b>/3, Ca=<b id="val-ca">0</b>/2</span>
+            <span>Троттлинг API: запрос раз в 30 сек или при смене статуса</span>
+        </div>
+    </div>
+
+    <!-- Верификация эталонов -->
+    <div class="card">
+        <div class="card-header">
+            <span class="card-title">Верификация эталонов (CWRU .mat / .csv)</span>
+        </div>
+        <div style="border: 2px dashed #CBD5E1; padding: 14px; text-align: center; border-radius: 6px; cursor: pointer; background: #FAFAFA;" onclick="document.getElementById('file-upload').click()">
+            <span style="font-size: 12px; color: var(--gpn-blue); font-weight: 600;">Нажмите для загрузки файла 130.mat или .csv</span>
+            <input type="file" id="file-upload" style="display:none;" onchange="uploadVerificationFile(this)">
+        </div>
+        <div id="verification-res" style="font-size: 12px; margin-top: 10px; display: none;"></div>
+    </div>
+
+    <!-- Суточный тренд (24 часа) -->
+    <div class="card full-col">
+        <div class="card-header">
+            <span class="card-title">Суточный тренд вибрации (Буфер за 24 часа)</span>
+            <button class="btn-mode" onclick="load24hTrend()">🔄 Обновить тренд</button>
+        </div>
+        <div id="chart-trend" style="height: 210px;"></div>
+    </div>
+
+    <!-- Журнал инцидентов за 30 дней -->
+    <div class="card full-col">
+        <div class="card-header">
+            <span class="card-title">Журнал зафиксированных инцидентов (Хранение 30 дней без повторений)</span>
+            <span style="font-size: 12px; color: #64748B;">Каждый дефект логируется однократно в момент пересечения порога</span>
+        </div>
+        <table class="log-table">
+            <thead>
+                <tr>
+                    <th>Время фиксации</th>
+                    <th>Узел</th>
+                    <th>Уровень</th>
+                    <th>Значение</th>
+                    <th>Описание дефекта</th>
+                    <th>Время устранения</th>
+                </tr>
+            </thead>
+            <tbody id="incidents-tbody">
+                <tr><td colspan="6" style="text-align:center; color:#94A3B8;">Инцидентов не зафиксировано</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+</div>
+
+<!-- МОДАЛЬНОЕ ОКНО ПАСПОРТА -->
+<div class="modal" id="passport-modal">
+    <div class="modal-content">
+        <h3 style="color: var(--gpn-blue); font-size: 15px; margin-bottom: 10px;">Параметры агрегата и подшипника</h3>
+        <div class="form-grid">
+            <div class="form-group"><label>Наименование двигателя:</label><input type="text" id="cfg-motor-name" value="Асинхронный ЭД А4-400Х-4МУ3"></div>
+            <div class="form-group"><label>Номинальная мощность (кВт):</label><input type="number" id="cfg-power" value="630"></div>
+            <div class="form-group"><label>Класс напряжения (кВ):</label><input type="number" step="0.1" id="cfg-voltage" value="6.0"></div>
+            <div class="form-group"><label>Обороты вала (об/мин):</label><input type="number" id="cfg-rpm" value="1796"></div>
+            <div class="form-group"><label>Тип подшипника:</label><input type="text" id="cfg-bearing" value="SKF 6205"></div>
+            <div class="form-group"><label>Количество тел качения (Nb):</label><input type="number" id="cfg-nb" value="9"></div>
+            <div class="form-group"><label>Диаметр шарика d (мм):</label><input type="number" step="0.01" id="cfg-d" value="7.94"></div>
+            <div class="form-group"><label>Диаметр дорожки D (мм):</label><input type="number" step="0.01" id="cfg-D" value="39.04"></div>
+            <div class="form-group"><label>Порог зоны B/C (мм/с):</label><input type="number" step="0.1" id="cfg-warn" value="2.8"></div>
+            <div class="form-group"><label>Порог зоны C/D (мм/с):</label><input type="number" step="0.1" id="cfg-alarm" value="4.5"></div>
+        </div>
+        <div style="display:flex; justify-content: flex-end; gap: 8px;">
+            <button class="btn-mode" onclick="closeModal('passport-modal')">Отмена</button>
+            <button class="btn-mode active" onclick="savePassport()">Сохранить</button>
+        </div>
+    </div>
+</div>
+
+<!-- МОДАЛЬНОЕ ОКНО НАСТРОЙКИ ИИ -->
+<div class="modal" id="ai-modal">
+    <div class="modal-content">
+        <h3 style="color: var(--gpn-blue); font-size: 15px; margin-bottom: 10px;">Конфигурация OpenRouter API</h3>
+        <div class="form-group" style="margin-bottom: 10px;">
+            <label>Режим работы ИИ:</label>
+            <select id="cfg-ai-mode">
+                <option value="OPENROUTER">OpenRouter API (Внешняя LLM с авто-fallback)</option>
+                <option value="LOCAL">Только локальный эксперт (Оффлайн-правила)</option>
+            </select>
+        </div>
+        <div class="form-group" style="margin-bottom: 10px;">
+            <label>OpenRouter API Key (или задайте через OPENROUTER_API_KEY в .env):</label>
+            <input type="password" id="cfg-openrouter-key" placeholder="sk-or-v1-...">
+        </div>
+        <div class="form-group" style="margin-bottom: 10px;">
+            <label>Модель OpenRouter:</label>
+            <select id="cfg-model-name">
+                <option value="meta-llama/llama-3.2-3b-instruct:free">meta-llama/llama-3.2-3b-instruct:free (Быстрая, бесплатная)</option>
+                <option value="openrouter/free">openrouter/free (Автовыбор свободной модели)</option>
+                <option value="google/gemini-2.0-flash-exp:free">google/gemini-2.0-flash-exp:free</option>
+                <option value="mistralai/mistral-7b-instruct:free">mistralai/mistral-7b-instruct:free</option>
+            </select>
+        </div>
+        <div style="font-size:11px; color:#64748B; margin-top:8px;">
+            ℹ️ Бесплатные модели имеют лимит 50 запросов в день. Программа опрашивает модель раз в 30 секунд или при возникновении аварий, чтобы не исчерпать квоту.
+        </div>
+        <div style="display:flex; justify-content: flex-end; gap: 8px; margin-top: 15px;">
+            <button class="btn-mode" onclick="closeModal('ai-modal')">Закрыть</button>
+            <button class="btn-mode active" onclick="saveAIConfig()">Сохранить настройки</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    let currentDefect = 'NORMAL';
+
+    Plotly.newPlot('chart-envelope', [{
+        x: [0], y: [0], type: 'scatter', mode: 'lines',
+        line: { color: '#0078D2', width: 1.5 }, name: 'Огибающая'
+    }], {
+        margin: { t: 15, r: 15, l: 35, b: 35 },
+        xaxis: { title: 'Гц', range: [0, 450] }, yaxis: { title: 'Ампл.', range: [0, 1.1] }
+    });
+
+    Plotly.newPlot('chart-mcsa', [{
+        x: [0], y: [0], type: 'scatter', mode: 'lines',
+        line: { color: '#10B981', width: 1.5 }, name: 'MCSA'
+    }], {
+        margin: { t: 15, r: 15, l: 35, b: 35 },
+        xaxis: { title: 'Гц', range: [35, 65] }, yaxis: { title: 'дБ', range: [-70, 5] }
+    });
+
+    Plotly.newPlot('chart-trend', [{
+        x: [], y: [], type: 'scatter', mode: 'lines+markers',
+        line: { color: '#003366', width: 2 }, name: 'Max RMS'
+    }], {
+        margin: { t: 15, r: 15, l: 35, b: 35 },
+        xaxis: { title: 'Время' }, yaxis: { title: 'мм/с' }
+    });
+
+    function openModal(id) { document.getElementById(id).style.display = 'flex'; }
+    function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+
+    async function applySimParams() {
+        const rpm = parseFloat(document.getElementById('slider-rpm').value);
+        const load = parseFloat(document.getElementById('slider-load').value);
+        document.getElementById('val-rpm').innerText = rpm;
+        document.getElementById('val-load').innerText = load;
+
+        await fetch('/api/simulation/control', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ sim_load_pct: load, active_defect: currentDefect, rated_rpm: rpm })
+        });
+    }
+
+    function setDefect(defect, btn) {
+        document.querySelectorAll('.sim-bar .btn-mode').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentDefect = defect;
+        applySimParams();
+    }
+
+    async function forceAIEval() {
+        const btn = event.target;
+        btn.disabled = true;
+        btn.innerText = '⏳ Анализ...';
+        try {
+            const res = await fetch('/api/ai/force_eval', { method: 'POST' });
+            const data = await res.json();
+            document.getElementById('ai-source-badge').innerText = data.source;
+            document.getElementById('ai-verdict-box').innerText = data.verdict;
+            document.getElementById('ai-quota-badge').innerText = `Квота: ${data.quota_left}/50`;
+        } catch(e) {
+            console.error(e);
+        } finally {
+            btn.disabled = false;
+            btn.innerText = '⚡ Запросить ИИ сейчас';
+        }
+    }
+
+    async function savePassport() {
+        const body = {
+            motor_name: document.getElementById('cfg-motor-name').value,
+            power_kw: parseFloat(document.getElementById('cfg-power').value),
+            voltage_kv: parseFloat(document.getElementById('cfg-voltage').value),
+            rated_rpm: parseFloat(document.getElementById('cfg-rpm').value),
+            bearing_type: document.getElementById('cfg-bearing').value,
+            nb_balls: parseInt(document.getElementById('cfg-nb').value),
+            ball_diameter_mm: parseFloat(document.getElementById('cfg-d').value),
+            pitch_diameter_mm: parseFloat(document.getElementById('cfg-D').value),
+            contact_angle_deg: 0.0,
+            iso_warn: parseFloat(document.getElementById('cfg-warn').value),
+            iso_alarm: parseFloat(document.getElementById('cfg-alarm').value)
+        };
+        await fetch('/api/passport/update', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body)
+        });
+        closeModal('passport-modal');
+    }
+
+    async function saveAIConfig() {
+        const key = document.getElementById('cfg-openrouter-key').value;
+        const body = {
+            ai_mode: document.getElementById('cfg-ai-mode').value,
+            model_name: document.getElementById('cfg-model-name').value,
+            openrouter_key: key ? key : undefined
+        };
+        await fetch('/api/ai/config', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body)
+        });
+        closeModal('ai-modal');
+    }
+
+    async function updateDashboard() {
+        try {
+            const res = await fetch('/api/telemetry');
+            const data = await res.json();
+            const tel = data.telemetry;
+
+            const pill = document.getElementById('status-pill');
+            pill.innerText = tel.machine_status;
+            pill.style.background = tel.machine_status === 'NORMAL' ? 'var(--status-green)' : (tel.machine_status === 'WARNING' ? 'var(--status-yellow)' : 'var(--status-red)');
+
+            document.getElementById('motor-display-title').innerText = 
+                `Агрегат: ${data.passport.motor_name} (${data.passport.voltage_kv} кВ / ${data.passport.power_kw} кВт)`;
+
+            for (const [k, v] of Object.entries(tel.rms_channels)) {
+                const el = document.getElementById('v-' + k);
+                if (el) el.innerText = v.toFixed(1);
+            }
+
+            for (const [sup, t] of Object.entries(tel.temperatures)) {
+                const tEl = document.getElementById('t-' + sup);
+                const dtEl = document.getElementById('dt-' + sup);
+                if (tEl) tEl.innerText = t.toFixed(1);
+                if (dtEl) dtEl.innerText = tel.dt_dt[sup].toFixed(1);
+
+                const box = document.getElementById('box-' + sup);
+                box.classList.remove('warning', 'alarm');
+                const supMax = Math.max(tel.rms_channels[sup+'_H'], tel.rms_channels[sup+'_V'], tel.rms_channels[sup+'_A']);
+                if (supMax > 4.5 || tel.dt_dt[sup] > 2.0) box.classList.add('alarm');
+                else if (supMax > 2.8 || tel.dt_dt[sup] > 1.0) box.classList.add('warning');
+            }
+
+            Plotly.update('chart-envelope', { x: [tel.envelope.freqs], y: [tel.envelope.amps] });
+            document.getElementById('bpfo-calc-label').innerText = 
+                `BPFO: ${tel.envelope.kinematics.BPFO} Гц | BPFI: ${tel.envelope.kinematics.BPFI} Гц`;
+
+            Plotly.update('chart-mcsa', { x: [tel.mcsa_chart.freqs], y: [tel.mcsa_chart.db] });
+            document.getElementById('mcsa-stat-label').innerText = 
+                `Боковые: ${tel.delta_l_mcsa} дБ (s = ${tel.slip})`;
+
+            // ИИ-валидатор OpenRouter
+            document.getElementById('ai-source-badge').innerText = data.ai.source;
+            document.getElementById('ai-model-badge').innerText = data.ai.model;
+            document.getElementById('ai-verdict-box').innerText = data.ai.verdict;
+            document.getElementById('ai-quota-badge').innerText = `Квота: ${data.ai.quota_left}/50`;
+            document.getElementById('val-cw').innerText = tel.filter_cw;
+            document.getElementById('val-ca').innerText = tel.filter_ca;
+
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    async function loadIncidents() {
+        try {
+            const res = await fetch('/api/incidents/30d');
+            const list = await res.json();
+            const tbody = document.getElementById('incidents-tbody');
+            if (!list || list.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#94A3B8;">Инцидентов не зафиксировано</td></tr>';
+                return;
+            }
+            let html = '';
+            list.forEach(item => {
+                const col = item.severity === 'ALARM' ? 'var(--status-red)' : 'var(--status-yellow)';
+                html += `<tr>
+                    <td>${item.timestamp}</td>
+                    <td><b>${item.unit}</b></td>
+                    <td style="color:${col}; font-weight:700;">${item.severity}</td>
+                    <td>${item.value} мм/с</td>
+                    <td>${item.description}</td>
+                    <td>${item.cleared_time ? item.cleared_time + ` (${item.duration_sec} с)` : '<span style="color:var(--status-red)">Активен</span>'}</td>
+                </tr>`;
+            });
+            tbody.innerHTML = html;
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    async function load24hTrend() {
+        const res = await fetch('/api/history/24h');
+        const data = await res.json();
+        Plotly.update('chart-trend', {
+            x: [data.map(d => d.timestamp)],
+            y: [data.map(d => d.max_rms)]
+        });
+    }
+
+    async function uploadVerificationFile(input) {
+        if (!input.files || input.files.length === 0) return;
+        const formData = new FormData();
+        formData.append('file', input.files[0]);
+
+        const box = document.getElementById('verification-res');
+        box.style.display = 'block';
+        box.innerHTML = '<i>Выполняется расчет эталона...</i>';
+
+        try {
+            const res = await fetch('/api/diagnose/file', { method: 'POST', body: formData });
+            const d = await res.json();
+            if (d.status === 'success') {
+                box.innerHTML = `<div style="background:#ECFDF5; border:1px solid #10B981; padding:8px; border-radius:4px;">
+                    <b>${d.filename}</b>: ${d.conclusion}
+                </div>`;
+            }
+        } catch (e) {
+            box.innerHTML = `<span style="color:red">Ошибка: ${e.message}</span>`;
+        }
+    }
+
+    setInterval(updateDashboard, 1000);
+    setInterval(loadIncidents, 3000);
+    setInterval(load24hTrend, 15000);
+    updateDashboard();
+    loadIncidents();
+    load24hTrend();
+</script>
+
+</body>
+</html>
