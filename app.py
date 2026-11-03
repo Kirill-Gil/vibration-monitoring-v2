@@ -13,6 +13,7 @@ import io
 import json
 import math
 import os
+import sys
 import time
 from typing import Any, Dict, List, Optional
 from urllib.error import HTTPError, URLError
@@ -43,7 +44,14 @@ def load_env_file():
 load_env_file()
 
 app = FastAPI(title="Industrial DNS Vibration & MCSA Diagnostic Platform")
-templates = Jinja2Templates(directory="templates")
+# Корректное определение пути к папке templates как при обычном запуске, так и внутри .exe
+if getattr(sys, 'frozen', False):
+    BASE_DIR = sys._MEIPASS
+else:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
+templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 # ==========================================
 # 1. ПАСПОРТ ОБОРУДОВАНИЯ
