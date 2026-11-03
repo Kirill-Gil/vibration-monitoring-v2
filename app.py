@@ -571,7 +571,7 @@ class AIValidator:
             f"MCSA токов: {snapshot['delta_l_mcsa']} дБ (скольжение s={snapshot['slip']}). "
             f"Пики спектра огибающей подшипника (g): {snapshot['envelope']['detected_peaks']}. "
             f"Аппаратный статус системы: {current_status}. "
-            f"Зафиксированный инцидент: {snapshot.get('active_fault', {}).get('description', 'Дефектов нет')}."
+            f"Зафиксированный инцидент: {(snapshot.get('active_fault') or {}).get('description', 'Дефектов нет')}."
         )
 
         try:
